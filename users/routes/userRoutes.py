@@ -210,7 +210,7 @@ async def make_decision(decision: UserDecision,user: UserTable = Depends(get_cur
     return {"message": f"Decision '{decision.decision}' saved for user {target_user.fullName}"}
 
 @router.get("/user/generate-qr/")
-def generate_qr(user: UserTable = Depends(get_current_user)):
+async def generate_qr(user: UserTable = Depends(get_current_user)):
     # Generate the QR code
     qr = qrcode.QRCode(
         version=1,
@@ -235,7 +235,7 @@ def generate_qr(user: UserTable = Depends(get_current_user)):
 
 
 @router.get("/user/find-by-qr-code/{id}")
-def findByQrCode(id:str,user: UserTable = Depends(get_current_user) ):
+async def findByQrCode(id:str,user: UserTable = Depends(get_current_user) ):
     finduserData = UserTable.objects.get(id=ObjectId(id))
     if finduserData:
         return {
@@ -249,3 +249,19 @@ def findByQrCode(id:str,user: UserTable = Depends(get_current_user) ):
             "data": None,
             "status": 200
     }
+
+@router.get("/user/all-user-list")
+async def allUSErList(current_user: UserTable = Depends(get_current_user)):
+    findata = UserTable.objects.all()
+    if findata:
+        return {
+            "message": "user list",
+            "data": json.loads(findata.to_json()),
+            "status": 200
+        }
+    else:
+        return {
+            "message":"no one registerd yet",
+            "data": None,
+            "status": 404
+        }
