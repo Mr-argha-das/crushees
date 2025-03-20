@@ -54,7 +54,7 @@ def upload_file_to_space(file_content: bytes, filename: str) -> str:
     
 
 @router.post("/user/upload-profile")
-async def upload_image(file: UploadFile = File(...),current_user: UserTable = Depends(get_current_user)):
+async def upload_image(file: UploadFile = File(...),):
     try:
         # Read file content
         file_content = await file.read()
