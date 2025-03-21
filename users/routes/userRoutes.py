@@ -188,3 +188,13 @@ def find_matching_users(current_user: UserTable) -> List[Dict]:
         })
 
     return matching_users
+
+
+@router.post("/user/login")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect UUID or password")
+
+    access_token = create_access_token(data={"sub": user.uuid})
+    return {"access_token": access_token, "token_type": "bearer"}
