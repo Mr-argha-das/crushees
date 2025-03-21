@@ -61,7 +61,7 @@ async def create_user(user: UserCreate):
         location_state=user.location_state,
         firstPrompt=user.firstPrompt,
         secondPrompt=user.secondPrompt,
-        thirdPrompt=user.thirdPrompt
+        thirdPrompt=user.thirdPrompt 
     )
     
     new_user.save()
