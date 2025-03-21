@@ -7,7 +7,7 @@ from chats.routes import chatsRoutes, chatWebsocket
 from nearbyUser.routes import nearbyUserRoutes
 
 app = FastAPI()
-connect('TestingDAtings', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/TestingDAtings")
+connect('115545', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/115545")
 
 app.include_router(userRoutes.router, tags=["Users"])
 app.include_router(uploadRoutes.router, tags=["Users"])
