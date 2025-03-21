@@ -59,6 +59,9 @@ async def create_user(user: UserCreate):
         sexual_orientation=user.sexual_orientation,
         location_city=user.location_city,
         location_state=user.location_state,
+        firstPrompt=user.firstPrompt,
+        secondPrompt=user.secondPrompt,
+        thirdPrompt=user.thirdPrompt
     )
     
     new_user.save()

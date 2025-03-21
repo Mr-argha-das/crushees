@@ -15,6 +15,9 @@ class UserTable(Document):
     location_state = StringField(required=True)
     interests = ListField(StringField())
     qualities = ListField(StringField())
+    firstPrompt = StringField(required=True)
+    secondPrompt = StringField(required=True)
+    thirdPrompt = StringField(required=True)
 class UserCreate(BaseModel):
     uuid: str
     email_address: str
@@ -28,6 +31,9 @@ class UserCreate(BaseModel):
     location_state: str
     interests: List[str]
     qualities: List[str]
+    firstPrompt : str
+    secondPrompt: str
+    thirdPrompt : str
 
 class UserResponse(BaseModel):
     uuid: str
