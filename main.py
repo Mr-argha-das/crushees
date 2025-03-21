@@ -7,7 +7,7 @@ from chats.routes import chatsRoutes, chatWebsocket
 from nearbyUser.routes import nearbyUserRoutes
 
 app = FastAPI()
-connect('11554566', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/11554566")
+connect('arghadas', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/arghadas")
 
 app.include_router(userRoutes.router, tags=["Users"])
 app.include_router(uploadRoutes.router, tags=["Users"])
@@ -19,7 +19,7 @@ app.add_api_websocket_route("/user/location/{user_id}", nearbyUserRoutes.locatio
 nearbyUserRoutes.add_api_websocket_route(app)
 app.add_api_websocket_route("/chat/ws/{user_id}", chatWebsocket.websocket_endpoint)
 chatWebsocket.add_api_websocket_route(app)
-
+ 
 
 
 import uvicorn
