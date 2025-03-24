@@ -162,7 +162,7 @@ async def generate_qr(user: UserTable = Depends(get_current_user)):
     qr.add_data(str(user.id))  # Convert ObjectId to string
     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="red", back_color="white")
+    img = qr.make_image(fill_color="black", back_color="white")
     buffer = BytesIO()
     img.save(buffer, format="PNG")
     buffer.seek(0)
