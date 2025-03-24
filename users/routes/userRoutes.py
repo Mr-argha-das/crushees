@@ -209,6 +209,8 @@ def calculate_age(dob_str):
 
 
 
+import random
+
 def find_matching_users(current_user: UserTable) -> List[Dict]:
     potential_matches = UserTable.objects.exclude('password_hash')
 
@@ -218,10 +220,16 @@ def find_matching_users(current_user: UserTable) -> List[Dict]:
     # Store UUIDs of users who were accepted or rejected
     interacted_users = {interaction.target_user_id.uuid for interaction in user_interactions}
 
-    # Filter users: Exclude current user & those already accepted/rejected
+    # Filter users: 
+    # 1. Exclude current user 
+    # 2. Exclude users who were already accepted/rejected
+    # 3. Exclude users whose UUID or email is stored as a plain string ("string")
     filtered_users = [
         user for user in potential_matches 
-        if user.uuid != current_user.uuid and user.uuid not in interacted_users
+        if user.uuid != current_user.uuid 
+        and user.uuid not in interacted_users
+        and user.uuid.lower() != "string"  # Exclude if UUID is "string"
+        and user.email_address.lower() != "string"  # Exclude if email is "string"
     ]
 
     # Shuffle to fetch random users
@@ -234,5 +242,6 @@ def find_matching_users(current_user: UserTable) -> List[Dict]:
     } for user in filtered_users]
 
     return matching_users
+
 
 
