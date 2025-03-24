@@ -12,6 +12,7 @@ from users.routes.userAuth import authenticate_user, create_access_token, get_cu
 import qrcode
 from fastapi.responses import StreamingResponse
 from io import BytesIO
+import random
 
 SECRET_KEY = "9b7f4a8c2dfe5a1234567890abcdef1234567890abcdef1234567890abcddf"
 ALGORITHM = "HS256"
@@ -111,6 +112,28 @@ async def match_users(user: UserTable = Depends(get_current_user)):
     }
 
 
+@router.get("/user/accepted-users/")
+async def get_accepted_users(user: UserTable = Depends(get_current_user)):
+    # Fetch all interactions where the current user has accepted another user
+    accepted_interactions = UserInteraction.objects(user_id=user, decision="accept")
+    
+    # Extract the UUIDs of accepted users
+    accepted_user_uuids = [interaction.target_user_id.uuid for interaction in accepted_interactions]
+
+    # Fetch user details of accepted users
+    accepted_users = UserTable.objects(uuid__in=accepted_user_uuids)
+
+    return {
+        "message": "Accepted users list",
+        "data": [{**user.to_mongo(), "_id": str(user.id)} for user in accepted_users],
+        "status": 200
+    } if accepted_users else {
+        "message": "No accepted users found",
+        "data": None,
+        "status": 404
+    }
+
+
 @router.post("/user/make-decision/")
 async def make_decision(decision: UserDecision, user: UserTable = Depends(get_current_user)):
     current_user = UserTable.objects(uuid=decision.user_id).first()
@@ -185,17 +208,30 @@ def calculate_age(dob_str):
     return age
 
 
+
 def find_matching_users(current_user: UserTable) -> List[Dict]:
     potential_matches = UserTable.objects.exclude('password_hash')
-    matching_users = []
 
-    for user in potential_matches:
-        if user.uuid == current_user.uuid:
-            continue
-        matching_users.append({
-            **user.to_mongo(),
-            "_id": str(user.id),
-        })
+    # Fetch all interactions where the current user has made a decision
+    user_interactions = UserInteraction.objects(user_id=current_user, decision__in=["accept", "reject"])
+    
+    # Store UUIDs of users who were accepted or rejected
+    interacted_users = {interaction.target_user_id.uuid for interaction in user_interactions}
+
+    # Filter users: Exclude current user & those already accepted/rejected
+    filtered_users = [
+        user for user in potential_matches 
+        if user.uuid != current_user.uuid and user.uuid not in interacted_users
+    ]
+
+    # Shuffle to fetch random users
+    random.shuffle(filtered_users)
+
+    # Convert to required format
+    matching_users = [{
+        **user.to_mongo(),
+        "_id": str(user.id),
+    } for user in filtered_users]
 
     return matching_users
 
