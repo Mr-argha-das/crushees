@@ -50,7 +50,7 @@ class UserResponse(BaseModel):
 class UserInteraction(Document):
     user_id = ReferenceField(UserTable, required=True)
     target_user_id = ReferenceField(UserTable, required=True)
-    decision = StringField(required=True, choices=["accept", "deny"])
+    decision = StringField(required=True, choices=["accept", "denied"])
 class UserDecision(BaseModel):
      # The current user's UUID
     target_user_id: str  # The UUID of the user being accepted/denied

@@ -13,6 +13,10 @@ import qrcode
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 import random
+from datetime import datetime
+from typing import List, Dict
+import random
+
 
 SECRET_KEY = "9b7f4a8c2dfe5a1234567890abcdef1234567890abcdef1234567890abcddf"
 ALGORITHM = "HS256"
@@ -21,6 +25,163 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 400000
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def calculate_age(dob_str: str) -> int:
+    try:
+        dob = datetime.strptime(dob_str, "%d-%m-%Y")
+    except Exception:
+        return 0
+
+    today = datetime.today()
+    return today.year - dob.year - (
+        (today.month, today.day) < (dob.month, dob.day)
+    )
+
+def age_score(age1: int, age2: int) -> int:
+    diff = abs(age1 - age2)
+
+    if diff <= 2:
+        return 15
+    elif diff <= 5:
+        return 10
+    elif diff <= 10:
+        return 5
+    return 0
+def find_matching_users(current_user: UserTable) -> List[Dict]:
+    potential_users = UserTable.objects.exclude(
+        'password_hash'
+    ).filter(uuid__ne=current_user.uuid)
+
+    interactions = UserInteraction.objects(
+        user_id=current_user,
+        decision__in=["accept", "denied"]
+    )
+
+    interacted_ids = {i.target_user_id.id for i in interactions}
+
+    filtered_users = [
+        user for user in potential_users
+        if user.id not in interacted_ids
+    ]
+
+    matches = []
+    current_age = calculate_age(current_user.age)
+
+    for user in filtered_users:
+        score = 0
+
+        # 📍 Location
+        if user.location_city == current_user.location_city:
+            score += 20
+
+        # ❤️ Sexual orientation
+        if user.sexual_orientation == current_user.sexual_orientation:
+            score += 20
+
+        # 🎯 Interests
+        common_interests = set(user.interests or []).intersection(
+            set(current_user.interests or [])
+        )
+        score += min(len(common_interests) * 5, 30)
+
+        # ⭐ Qualities
+        common_qualities = set(user.qualities or []).intersection(
+            set(current_user.qualities or [])
+        )
+        score += min(len(common_qualities) * 5, 20)
+
+        # 🎂 Age (SAFE)
+        user_age = calculate_age(user.age)
+        score += age_score(current_age, user_age)
+
+        if score >= 30:
+            matches.append({
+                "_id": str(user.id),
+                "uuid": user.uuid,
+                "fullName": user.fullName,
+                "profilePicture": user.profilePicture,
+                "age": user.age,
+                "gender": user.gender,
+                "sexual_orientation": user.sexual_orientation,
+                "location_city": user.location_city,
+                "interests": user.interests,
+                "qualities": user.qualities,
+                "compatibility_score": score
+            })
+
+    matches.sort(key=lambda x: x["compatibility_score"], reverse=True)
+    return matches
+
+
+
+    # 1️⃣ All users except self
+    potential_users = UserTable.objects.exclude(
+        'password_hash'
+    ).filter(uuid__ne=current_user.uuid)
+
+    # 2️⃣ Remove already interacted users
+    interactions = UserInteraction.objects(
+        user_id=current_user,
+        decision__in=["accept", "denied"]
+    )
+
+    interacted_ids = {i.target_user_id.id for i in interactions}
+
+    filtered_users = [
+        user for user in potential_users
+        if user.id not in interacted_ids
+    ]
+
+    matches = []
+
+    current_age = calculate_age(current_user.age)
+
+    for user in filtered_users:
+        score = 0
+
+        # 📍 Location
+        if user.location_city == current_user.location_city:
+            score += 20
+
+        # ❤️ Sexual orientation
+        if user.sexual_orientation == current_user.sexual_orientation:
+            score += 20
+
+        # 🎯 Interests
+        common_interests = set(user.interests or []).intersection(
+            set(current_user.interests or [])
+        )
+        score += min(len(common_interests) * 5, 30)
+
+        # ⭐ Qualities
+        common_qualities = set(user.qualities or []).intersection(
+            set(current_user.qualities or [])
+        )
+        score += min(len(common_qualities) * 5, 20)
+
+        # 🎂 Age compatibility (FIXED)
+        user_age = calculate_age(user.age)
+        score += age_score(current_age, user_age)
+
+        # ✅ Threshold
+        if score >= 30:
+            matches.append({
+                "_id": str(user.id),
+                "uuid": user.uuid,
+                "fullName": user.fullName,
+                "profilePicture": user.profilePicture,
+                "age": user.age,
+                "gender": user.gender,
+                "sexual_orientation": user.sexual_orientation,
+                "location_city": user.location_city,
+                "interests": user.interests,
+                "qualities": user.qualities,
+                "compatibility_score": score
+            })
+
+    matches.sort(key=lambda x: x["compatibility_score"], reverse=True)
+    return matches
+
 
 @router.post("/token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -110,9 +271,8 @@ async def match_users(user: UserTable = Depends(get_current_user)):
     if not current_user_doc:
         raise HTTPException(status_code=404, detail="User not found")
 
-    matching_users = find_matching_users(current_user_doc)
     return {
-        "data":matching_users,
+        "data": find_matching_users(current_user_doc),
         "status": 200
     }
 
@@ -173,18 +333,15 @@ async def get_users_who_accepted_me(
         ],
         "status": 200
     }
-@router.post("/user/make-decision/")
-async def make_decision(
-    decision: UserDecision,
-    current_user: UserTable = Depends(get_current_user)
-):
-    # current_user is already UserTable
-    target_user = UserTable.objects(
-        uuid=decision.target_user_id
-    ).first()
 
-    if not target_user:
-        raise HTTPException(status_code=404, detail="Target user not found")
+
+@router.post("/user/make-decision/")
+async def make_decision(decision: UserDecision, user: UserTable = Depends(get_current_user)):
+    current_user = UserTable.objects(uuid=user.uuid).first()
+    target_user = UserTable.objects(uuid=decision.target_user_id).first()
+
+    if not current_user or not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     UserInteraction(
         user_id=current_user,
@@ -192,12 +349,7 @@ async def make_decision(
         decision=decision.decision
     ).save()
 
-    return {
-        "message": f"Decision '{decision.decision}' saved",
-        "target_user": target_user.fullName,
-        "status": 200
-    }
-
+    return {"message": f"Decision '{decision.decision}' saved for user {target_user.fullName}"}
 
 
 @router.get("/user/generate-qr/")
@@ -250,49 +402,89 @@ async def all_user_list(current_user: UserTable = Depends(get_current_user)):
 
 
 # Utility Functions
-def calculate_age(dob_str):
-    dob = datetime.strptime(dob_str, "%d/%m/%Y")
-    today = datetime.today()
-    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-    return age
 
 
+    # Step 1: Fetch all users except self
+    potential_users = UserTable.objects.exclude(
+        'password_hash'
+    ).filter(uuid__ne=current_user.uuid)
 
-import random
+    # Step 2: Remove already interacted users
+    interactions = UserInteraction.objects(
+        user_id=current_user,
+        decision__in=["accept", "deny"]
+    )
 
-def find_matching_users(current_user: UserTable) -> List[Dict]:
-    potential_matches = UserTable.objects.exclude('password_hash')
+    interacted_ids = {i.target_user_id.id for i in interactions}
 
-    # Fetch all interactions where the current user has made a decision
-    user_interactions = UserInteraction.objects(user_id=current_user, decision__in=["accept", "reject"])
-    
-    # Store UUIDs of users who were accepted or rejected
-    interacted_users = {interaction.target_user_id.uuid for interaction in user_interactions}
-
-    # Filter users: 
-    # 1. Exclude current user 
-    # 2. Exclude users who were already accepted/rejected
-    # 3. Exclude users whose UUID or email is stored as a plain string ("string")
     filtered_users = [
-        user for user in potential_matches 
-        if user.uuid != current_user.uuid 
-        and user.uuid not in interacted_users
-        and user.uuid.lower() != "string"  # Exclude if UUID is "string"
-        and user.email_address.lower() != "string"  # Exclude if email is "string"
+        user for user in potential_users
+        if user.id not in interacted_ids
     ]
 
-    # Shuffle to fetch random users
-    random.shuffle(filtered_users)
+    matches = []
 
-    # Convert to required format
-    matching_users = [{
-        **user.to_mongo(),
-        "_id": str(user.id),
-    } for user in filtered_users]
+    for user in filtered_users:
+        score = 0
 
-    return matching_users
+        # -------------------------
+        # LOCATION MATCH
+        # -------------------------
+        if user.location_city == current_user.location_city:
+            score += 20
 
+        # -------------------------
+        # SEXUAL ORIENTATION
+        # -------------------------
+        if user.sexual_orientation == current_user.sexual_orientation:
+            score += 20
 
+        # -------------------------
+        # INTERESTS MATCH
+        # -------------------------
+        common_interests = set(user.interests).intersection(
+            set(current_user.interests)
+        )
+        score += min(len(common_interests) * 5, 30)
+
+        # -------------------------
+        # QUALITIES MATCH
+        # -------------------------
+        common_qualities = set(user.qualities).intersection(
+            set(current_user.qualities)
+        )
+        score += min(len(common_qualities) * 5, 20)
+
+        # -------------------------
+        # AGE COMPATIBILITY
+        # -------------------------
+        score += age_score(
+            int(current_user.age),
+            int(user.age)
+        )
+
+        # -------------------------
+        # MIN SCORE CHECK
+        # -------------------------
+        if score >= 30:  # threshold
+            matches.append({
+                "_id": str(user.id),
+                "uuid": user.uuid,
+                "fullName": user.fullName,
+                "profilePicture": user.profilePicture,
+                "age": user.age,
+                "gender": user.gender,
+                "sexual_orientation": user.sexual_orientation,
+                "location_city": user.location_city,
+                "interests": user.interests,
+                "qualities": user.qualities,
+                "compatibility_score": score
+            })
+
+    # Step 3: Sort best matches first
+    matches.sort(key=lambda x: x["compatibility_score"], reverse=True)
+
+    return matches
 
 
 import random

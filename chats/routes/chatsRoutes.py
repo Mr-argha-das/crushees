@@ -8,11 +8,15 @@ from users.routes.userAuth import get_current_user
 from .chatWebsocket import manager
 
 router = APIRouter()
-
+def is_valid_object_id(value):
+    try:
+        ObjectId(str(value))
+        return True
+    except Exception:
+        return False
 
 # =========================
 # GET INBOX
-# =========================
 @router.get("/chats/inbox")
 async def get_inbox(current_user: UserTable = Depends(get_current_user)):
     current_user_id = str(ObjectId(current_user.id))
@@ -21,16 +25,28 @@ async def get_inbox(current_user: UserTable = Depends(get_current_user)):
         participants=current_user_id
     ).order_by("-last_message__timestamp")
 
-    if not conversations:
-        return {"message": "No conversations", "inbox": [], "status": 200}
-
     inbox_list = []
 
     for convo in conversations:
-        other_user_id = [p for p in convo.participants if p != current_user_id][0]
-        user = UserTable.objects.get(id=ObjectId(other_user_id))
+        # ✅ safely extract other user id
+        other_user_id = None
 
-        # Sender side status
+        for p in convo.participants:
+            if p != current_user_id and is_valid_object_id(p):
+                other_user_id = p
+                break
+
+        # ❌ if no valid other user → skip this conversation
+        if not other_user_id:
+            continue
+
+        try:
+            user = UserTable.objects.get(id=ObjectId(other_user_id))
+        except Exception:
+            # user deleted / invalid reference
+            continue
+
+        # last message text logic
         if convo.last_message.sender_id == current_user_id:
             last_message_text = (
                 "seen just now"
@@ -56,7 +72,6 @@ async def get_inbox(current_user: UserTable = Depends(get_current_user)):
         "inbox": inbox_list,
         "status": 200
     }
-
 
 # =========================
 # CHAT HISTORY
