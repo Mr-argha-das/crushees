@@ -5,8 +5,8 @@ from chats.model.chatsModel import Conversation, Message
 
 router = APIRouter()
 
+
 class ConnectionManager:
-    """Handles private WebSocket connections."""
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
 
@@ -17,19 +17,38 @@ class ConnectionManager:
     def disconnect(self, user_id: str):
         self.active_connections.pop(user_id, None)
 
-    async def send_private_message(self, sender_id: str, receiver_id: str, message: str):
+    # =========================
+    # SEND MESSAGE
+    # =========================
+    async def send_private_message(
+        self,
+        sender_id: str,
+        receiver_id: str,
+        message: str
+    ):
         receiver_socket = self.active_connections.get(receiver_id)
-        
-        # Store message in MongoDB
-        msg = Message(sender_id=sender_id, receiver_id=receiver_id, message=message)
+
+        # 🔥 IMPORTANT: explicitly is_read=False
+        msg = Message(
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            message=message,
+            is_read=False
+        )
         msg.save()
 
-        # Update or create conversation
-        conversation = Conversation.objects(participants__all=[sender_id, receiver_id]).first()
+        conversation = Conversation.objects(
+            participants__all=[sender_id, receiver_id]
+        ).first()
+
         if not conversation:
-            conversation = Conversation(participants=[sender_id, receiver_id], last_message=msg)
+            conversation = Conversation(
+                participants=[sender_id, receiver_id],
+                last_message=msg
+            )
         else:
             conversation.last_message = msg
+
         conversation.save()
 
         if receiver_socket:
@@ -38,12 +57,23 @@ class ConnectionManager:
                 "message": message
             })
 
+    # =========================
+    # SEEN EVENT
+    # =========================
+    async def send_seen_event(self, sender_id: str, seen_by: str):
+        sender_socket = self.active_connections.get(sender_id)
+
+        if sender_socket:
+            await sender_socket.send_json({
+                "type": "seen",
+                "by": seen_by
+            })
+
+
 manager = ConnectionManager()
 
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """Handles WebSocket connections for private messaging."""
     await manager.connect(websocket, user_id)
-    
 
     try:
         while True:
@@ -52,10 +82,16 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             message = data.get("message")
 
             if not receiver_id or not message:
-                await websocket.send_json({"error": "Missing receiver_id or message"})
+                await websocket.send_json({
+                    "error": "Missing receiver_id or message"
+                })
                 continue
 
-            await manager.send_private_message(user_id, receiver_id, message)
+            await manager.send_private_message(
+                user_id,
+                receiver_id,
+                message
+            )
 
     except WebSocketDisconnect:
         manager.disconnect(user_id)
@@ -89,4 +125,6 @@ def add_api_websocket_route(app: FastAPI):
     }
 
 # 🚀 Register WebSocket route in FastAPI
+
+
 

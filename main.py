@@ -1,3 +1,4 @@
+from fastapi.staticfiles import StaticFiles
 from mongoengine import connect
 from fastapi import FastAPI
 from users.routes import userRoutes, uploadRoutes
@@ -7,8 +8,8 @@ from chats.routes import chatsRoutes, chatWebsocket
 from nearbyUser.routes import nearbyUserRoutes
 
 app = FastAPI()
-connect('arghadas', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/arghadas")
-
+connect('arghadas', host="mongodb+srv://avbigbuddy:nZ4ATPTwJjzYnm20@cluster0.wplpkxz.mongodb.net/arghadas245")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(userRoutes.router, tags=["Users"])
 app.include_router(uploadRoutes.router, tags=["Users"])
 app.include_router(thingsRoutes.router, tags=["Things"])
@@ -25,4 +26,4 @@ chatWebsocket.add_api_websocket_route(app)
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", port=8080, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

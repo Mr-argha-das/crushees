@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from fastapi import APIRouter
-from users.models.usermodel import UserCreate, UserDecision, UserInteraction, UserTable
+from users.models.usermodel import EmailCheckRequest, EmailCheckResponse, OTPTable, UserCreate, UserDecision, UserInteraction, UserTable
 from users.routes.userAuth import authenticate_user, create_access_token, get_current_user, get_user
 import qrcode
 from fastapi.responses import StreamingResponse
@@ -66,8 +66,8 @@ async def create_user(user: UserCreate):
     )
 
     new_user.save()
-    return {"message": "User created successfully"}
-
+    access_token = create_access_token(data={"sub": user.uuid})
+    return {"message": "User created successfully", "access_token": access_token}
 
 @router.get("/users/me")
 async def read_users_me(current_user: UserTable = Depends(get_current_user)):
@@ -84,6 +84,11 @@ async def read_users_me(current_user: UserTable = Depends(get_current_user)):
             "sexual_orientation": current_user.sexual_orientation,
             "location_city": current_user.location_city,
             "location_state": current_user.location_state,
+            "interests": current_user.interests,
+            "qualities": current_user.qualities,
+            "firstPrompt": current_user.firstPrompt,
+            "secondPrompt": current_user.secondPrompt,
+            "thirdPrompt": current_user.thirdPrompt
         },
         "status": 200
     }
@@ -132,15 +137,54 @@ async def get_accepted_users(user: UserTable = Depends(get_current_user)):
         "data": None,
         "status": 404
     }
+@router.get("/user/who-accepted-me/")
+async def get_users_who_accepted_me(
+    current_user: UserTable = Depends(get_current_user)
+):
+    # 1️⃣ Fetch interactions where OTHER users accepted ME
+    accepted_interactions = UserInteraction.objects(
+        target_user_id=current_user,
+        decision="accept"
+    )
 
+    if not accepted_interactions:
+        return {
+            "message": "No users have to match you yet",
+            "data": [],
+            "status": 200
+        }
 
+    # 2️⃣ Extract user IDs of users who accepted me
+    accepted_by_user_uuids = [
+        interaction.user_id.uuid
+        for interaction in accepted_interactions
+    ]
+
+    # 3️⃣ Fetch user details
+    accepted_users = UserTable.objects(
+        uuid__in=accepted_by_user_uuids
+    )
+
+    return {
+        "message": "Users who accepted you",
+        "data": [
+            {**user.to_mongo(), "_id": str(user.id)}
+            for user in accepted_users
+        ],
+        "status": 200
+    }
 @router.post("/user/make-decision/")
-async def make_decision(decision: UserDecision, user: UserTable = Depends(get_current_user)):
-    current_user = UserTable.objects(uuid=decision.user_id).first()
-    target_user = UserTable.objects(uuid=decision.target_user_id).first()
+async def make_decision(
+    decision: UserDecision,
+    current_user: UserTable = Depends(get_current_user)
+):
+    # current_user is already UserTable
+    target_user = UserTable.objects(
+        uuid=decision.target_user_id
+    ).first()
 
-    if not current_user or not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found")
 
     UserInteraction(
         user_id=current_user,
@@ -148,7 +192,12 @@ async def make_decision(decision: UserDecision, user: UserTable = Depends(get_cu
         decision=decision.decision
     ).save()
 
-    return {"message": f"Decision '{decision.decision}' saved for user {target_user.fullName}"}
+    return {
+        "message": f"Decision '{decision.decision}' saved",
+        "target_user": target_user.fullName,
+        "status": 200
+    }
+
 
 
 @router.get("/user/generate-qr/")
@@ -245,3 +294,179 @@ def find_matching_users(current_user: UserTable) -> List[Dict]:
 
 
 
+
+import random
+
+def generate_otp():
+    return str(random.randint(100000, 999999))
+
+from datetime import datetime, timedelta
+from fastapi import HTTPException
+from pydantic import BaseModel
+class EmailCheckRequest(BaseModel):
+    email: str
+@router.post("/auth/send-otp")
+async def send_otp(mobile: EmailCheckRequest):
+    print(f"Sending OTP to mobile: {mobile.email}")
+    user = UserTable.objects(email_address=f"{mobile.email}").first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    otp = STATIC_OTP
+    expiry = datetime.utcnow() + timedelta(minutes=5)
+
+    # Remove old OTPs
+    OTPTable.objects(mobile=mobile.email).delete()
+
+    OTPTable(
+        mobile=mobile.email,
+        otp=otp,
+        expires_at=expiry
+    ).save()
+
+    # 👉 SMS integration yaha karo (Twilio / Fast2SMS)
+    print("OTP:", otp)  # DEV ONLY
+
+    return {
+        "message": "OTP sent successfully",
+        "expires_in": "5 minutes"
+    }
+
+class LoginWithOTPRequest(BaseModel):
+    mobile: str
+    otp: str
+
+@router.post("/auth/login-with-otp")
+async def login_with_otp(data: LoginWithOTPRequest):
+    otp_record = OTPTable.objects(
+        mobile=data.mobile,
+        otp=data.otp,
+        expires_at__gte=datetime.utcnow()
+    ).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    user = UserTable.objects(email_address=data.mobile).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    access_token = create_access_token(data={"sub": user.uuid})
+
+    # OTP delete after use
+    otp_record.delete()
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "uuid": user.uuid,
+            "fullName": user.fullName,
+            "mobile": data.mobile
+        }
+    }
+
+@router.post("/check-email", response_model=EmailCheckResponse)
+def check_email(data: EmailCheckRequest):
+    user = UserTable.objects(email_address=data.email).first()
+
+    if user:
+        return {"exists": False}   # ❌ Email already exists
+    else:
+        return {"exists": True}    # ✅ Email available
+    
+STATIC_OTP = "1234"           # 🔥 testing ke liye
+OTP_EXPIRY_MINUTES = 5  
+
+from pydantic import BaseModel
+
+class SendOTPRequest(BaseModel):
+    mobile: str
+
+class VerifyOTPRequest(BaseModel):
+    mobile: str
+    otp: str
+@router.post("/signup/send")
+def send_otp(data: SendOTPRequest):
+    """
+    OTP Send API (static OTP)
+    """
+
+    # Purana OTP delete karo
+    OTPTable.objects(mobile=data.mobile).delete()
+
+    expires_at = datetime.utcnow() + timedelta(minutes=OTP_EXPIRY_MINUTES)
+
+    # Naya OTP save
+    OTPTable(
+        mobile=data.mobile,
+        otp=STATIC_OTP,
+        expires_at=expires_at
+    ).save()
+
+    return {
+        "success": True,
+        "message": "OTP sent successfully",
+        "expires_at": expires_at,
+        "otp": STATIC_OTP  # ⚠️ REMOVE in production
+    }
+@router.post("/signup/verify")
+def verify_otp(data: VerifyOTPRequest):
+    """
+    OTP Verify API
+    """
+
+    otp_entry = OTPTable.objects(
+        mobile=data.mobile,
+        otp=data.otp
+    ).first()
+
+    if not otp_entry:
+        return {
+            "success": False,
+            "message": "Invalid OTP"
+        }
+
+    # ⏰ Expiry check
+    if otp_entry.expires_at < datetime.utcnow():
+        otp_entry.delete()
+        return {
+            "success": False,
+            "message": "OTP expired"
+        }
+
+    # ✅ Success → OTP delete kar do (one time use)
+    otp_entry.delete()
+
+    return {
+        "success": True,
+        "message": "OTP verified successfully"
+    }
+
+# all user list for admin
+@router.get("/admin/all-users")
+async def get_all_users():
+    users = UserTable.objects()
+
+    user_list = []
+    for user in users:
+        user_list.append({
+            "uuid": user.uuid,
+            "email_address": user.email_address,
+            "fullName": user.fullName,
+            "profilePicture": user.profilePicture,
+            "age": user.age,
+            "gender": user.gender,
+            "sexual_orientation": user.sexual_orientation,
+            "location_city": user.location_city,
+            "location_state": user.location_state,
+            "interests": user.interests,
+            "qualities": user.qualities,
+            "created_at": str(user.id.generation_time)  # optional
+        })
+
+    return {
+        "success": True,
+        "total": len(user_list),
+        "users": user_list
+    }

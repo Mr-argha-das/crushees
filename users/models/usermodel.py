@@ -6,7 +6,7 @@ class UserTable(Document):
     uuid = StringField(required=True)
     email_address = StringField(required=True)
     fullName = StringField(required=True)
-    profilePicture = StringField(required=True)
+    profilePicture = ListField(StringField(), required=True)
     age = StringField(required=True)
     gender = StringField(required=True)
     password_hash = StringField(required=True)
@@ -22,7 +22,7 @@ class UserCreate(BaseModel):
     uuid: str
     email_address: str
     fullName: str
-    profilePicture: str
+    profilePicture: List[str]
     age: str
     gender: str
     password: str
@@ -52,6 +52,24 @@ class UserInteraction(Document):
     target_user_id = ReferenceField(UserTable, required=True)
     decision = StringField(required=True, choices=["accept", "deny"])
 class UserDecision(BaseModel):
-    user_id: str  # The current user's UUID
+     # The current user's UUID
     target_user_id: str  # The UUID of the user being accepted/denied
     decision: str  #
+
+from mongoengine import Document, StringField, DateTimeField
+from datetime import datetime, timedelta
+
+class OTPTable(Document):
+    mobile = StringField(required=True)
+    otp = StringField(required=True)
+    expires_at = DateTimeField(required=True)
+
+    meta = {"collection": "otp_table"}
+from pydantic import BaseModel, EmailStr
+
+class EmailCheckRequest(BaseModel):
+    email: str
+
+class EmailCheckResponse(BaseModel):
+    exists: bool
+
